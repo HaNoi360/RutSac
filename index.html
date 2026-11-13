@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="description" content="Tính thời điểm rút sạc xe điện">
+<link rel="manifest" href="manifest.json">
+<title>Rút Sạc</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f4f6;color:#111827}
+.app{max-width:520px;margin:auto;min-height:100vh;padding:20px 16px 28px}
+header{text-align:center;padding:12px 0 20px}
+.logo{width:62px;height:62px;border-radius:20px;background:#111827;color:#fff;display:grid;place-items:center;margin:0 auto 12px;font-size:30px}
+h1{font-size:28px;margin:0;font-weight:800} .sub{color:#6b7280;margin-top:5px}
+.card{background:#fff;border-radius:24px;padding:20px;margin:12px 0;box-shadow:0 6px 25px #0000000d}
+label{display:block;font-weight:700;margin-bottom:9px}
+input{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:14px 15px;font-size:18px;outline:none}
+input:focus{border-color:#111827;box-shadow:0 0 0 3px #11182714}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button{width:100%;border:0;border-radius:15px;padding:15px;font-size:17px;font-weight:800;cursor:pointer}
+.primary{background:#111827;color:#fff;margin-top:16px}.secondary{background:#e5e7eb;color:#111827;margin-top:10px}
+.result{background:#111827;color:white;border-radius:24px;padding:22px;text-align:center;margin:14px 0}
+.result .small{color:#cbd5e1;font-size:14px}.time{font-size:42px;font-weight:900;letter-spacing:-1px;margin:5px 0}
+.date{font-size:16px;color:#e5e7eb}.duration{margin-top:12px;padding-top:12px;border-top:1px solid #ffffff20;color:#d1d5db}
+.tip{font-size:14px;color:#6b7280;line-height:1.55;margin:8px 3px}
+.hidden{display:none}
+.status{font-size:13px;color:#059669;text-align:center;margin-top:9px;min-height:20px}
+footer{text-align:center;color:#9ca3af;font-size:12px;margin-top:22px}
+@media(max-width:380px){.row{grid-template-columns:1fr}.time{font-size:36px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="logo">⚡</div>
+  <h1>Rút Sạc</h1>
+  <div class="sub">Tính thời điểm xe đầy pin</div>
+</header>
+
+<div class="card">
+  <label for="battery">Pin hiện tại (%)</label>
+  <input id="battery" type="number" min="0" max="99" step="1" inputmode="numeric" value="44">
+  <button class="primary" id="calc">Tính thời điểm rút sạc</button>
+</div>
+
+<div class="result" id="result">
+  <div class="small">Nếu bắt đầu sạc ngay bây giờ</div>
+  <div class="time" id="time">--:--</div>
+  <div class="date" id="date">Nhập % pin để tính</div>
+  <div class="duration" id="duration"></div>
+</div>
+
+<div class="card">
+  <label>Thiết lập tốc độ sạc</label>
+  <div class="row">
+    <div>
+      <label for="baseBattery" style="font-size:13px;color:#6b7280">Mức pin còn lại (%)</label>
+      <input id="baseBattery" type="number" min="0" max="99" step="1" value="20" inputmode="numeric">
+    </div>
+    <div>
+      <label for="baseHours" style="font-size:13px;color:#6b7280">Thời gian đầy (giờ)</label>
+      <input id="baseHours" type="number" min="0.01" max="100" step="0.01" value="2.5" inputmode="decimal">
+    </div>
+  </div>
+  <button class="secondary" id="save">Lưu thiết lập</button>
+  <div class="status" id="status"></div>
+  <p class="tip">Mặc định: từ 20% lên 100% mất 2,5 giờ. Thiết lập được lưu trên thiết bị để dùng cho lần sau.</p>
+</div>
+
+<div class="card">
+  <button class="secondary" id="install" style="display:none">📱 Thêm vào màn hình chính</button>
+  <p class="tip">Sau khi cài PWA, ứng dụng có thể mở toàn màn hình và hoạt động offline.</p>
+</div>
+
+<footer>Rút Sạc • Offline • Dữ liệu lưu trên thiết bị</footer>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let deferredPrompt=null;
+
+function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
+function formatDate(d){
+ const days=["Chủ nhật","Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7"];
+ return `${days[d.getDay()]}, ${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+}
+function calc(){
+ const battery=clamp(Number($("battery").value||0),0,99);
+ const base=clamp(Number($("baseBattery").value||20),0,99);
+ const hours=Number($("baseHours").value||2.5);
+ if(hours<=0 || base>=100){$("time").textContent="--:--";return}
+ if(battery>=100){$("time").textContent="ĐẦY";$("date").textContent="Pin đã ở mức 100%";$("duration").textContent="";return}
+ const totalMinutes=(100-base)*60*hours/(100-base); // keeps calibration explicit
+ const minutesPerPercent=hours*60/(100-base);
+ const chargeMinutes=Math.max(0,(100-battery)*minutesPerPercent);
+ const end=new Date(Date.now()+chargeMinutes*60000);
+ $("time").textContent=end.toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"});
+ $("date").textContent=formatDate(end);
+ const h=Math.floor(chargeMinutes/60), m=Math.round(chargeMinutes%60);
+ $("duration").textContent=`Thời gian sạc còn khoảng ${h? h+" giờ ":""}${m? m+" phút":h?"":"0 phút"}`;
+}
+function save(){
+ const base=Number($("baseBattery").value), hours=Number($("baseHours").value);
+ if(base<0||base>=100||hours<=0){$("status").textContent="Vui lòng kiểm tra thiết lập.";return}
+ localStorage.setItem("sac_base",base);
+ localStorage.setItem("sac_hours",hours);
+ $("status").textContent="✓ Đã lưu thiết lập";
+ calc();
+ setTimeout(()=>$("status").textContent="",1800);
+}
+$("calc").onclick=calc;
+$("save").onclick=save;
+$("battery").oninput=calc;
+["baseBattery","baseHours"].forEach(id=>$(id).oninput=calc);
+
+const b=localStorage.getItem("sac_base"), h=localStorage.getItem("sac_hours");
+if(b!==null)$("baseBattery").value=b;
+if(h!==null)$("baseHours").value=h;
+calc();
+
+window.addEventListener("beforeinstallprompt",e=>{
+ e.preventDefault(); deferredPrompt=e; $("install").style.display="block";
+});
+$("install").onclick=async()=>{
+ if(!deferredPrompt)return;
+ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null;
+ $("install").style.display="none";
+};
+if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js"));
+</script>
+</body>
+</html>
